@@ -21,6 +21,20 @@ This project recreates CVE-2021-41773 (Apache HTTP Server 2.4.49 path traversal)
 - `cve-2021-41773/exploit/` — workspace for crafted exploit requests
 - `cve-2021-41773/patches/` — workspace for secure patched configs
 
+## Linux/Ubuntu Setup Notes
+This starter environment is designed for Linux/Ubuntu use.
+
+Install Docker on Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+```
+
+Then log out/in (or run `newgrp docker`) before running Docker commands as a non-root user.
+
 ## Quick Start
 From repository root:
 
