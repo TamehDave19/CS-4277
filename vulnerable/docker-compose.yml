@@ -1,0 +1,7 @@
+version: "3.8"
+services:
+  apache-vulnerable:
+    build: .
+    container_name: apache-cve-2021-41773
+    ports:
+      - "8080:80"

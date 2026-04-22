@@ -1,0 +1,7 @@
+version: "3.8"
+services:
+  apache-patched:
+    build: .
+    container_name: apache-cve-patched
+    ports:
+      - "8080:80"
