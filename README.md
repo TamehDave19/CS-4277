@@ -86,7 +86,8 @@ curl --path-as-is \
 
 **Explanation**:
 - `%2e` is the URL encoding of `.`
-- So `.%2e/` decodes to `./` which combined with the next segment traverses up a directory
+- So `.%2e/` decodes to `../` (parent directory)
+- Chaining it 4 times walks up directories until Apache resolves paths under `/`
 - Apache 2.4.49 checks the path *before* fully decoding it, so the traversal slips past the access check
 - We use `/static/` (an Alias to `/`) as the entry point so Apache reads the file rather than trying to execute it
 
@@ -156,10 +157,10 @@ View the real diff at: https://github.com/apache/httpd/commit/e150697
 **Function changed**: `ap_normalize_path()`
 
 **What happened before the patch**:
-1. Request comes in: `/cgi-bin/.%2e/%2e%2e/etc/passwd`
+1. Request comes in: `/static/.%2e/.%2e/.%2e/.%2e/etc/passwd`
 2. Apache checks access controls using the encoded path → looks safe
-3. Apache then decodes `%2e` → `.` to resolve the final path
-4. Now the path is `/../etc/passwd` → file is served ← **bug is here**
+3. Apache then decodes `%2e` → `.` and resolves traversal segments
+4. Final path resolves outside docroot (for example `/etc/passwd`) → file is served ← **bug is here**
 
 **What the patch does**:
 1. Decodes `%2e` → `.` first

